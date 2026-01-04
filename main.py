@@ -219,7 +219,7 @@ def estimate_travel_time_km(distance_km: float, rain: float, ultrasonic: float, 
         # INVERTED scale: 3cm=high water, 13cm=shallow
         # Map: 3cm → 1.0m depth, 13cm → 0.0m depth
         ultrasonic_val = float(ultrasonic)
-        depth_m = max(0.05, (13.0 - ultrasonic_val) / 10.0)
+        depth_m = max(0.05, (16.0 - ultrasonic_val) / 10.0)
     except Exception:
         return 'Estimated travel time: unavailable (bad ultrasonic reading)'
 
@@ -230,9 +230,9 @@ def estimate_travel_time_km(distance_km: float, rain: float, ultrasonic: float, 
 
     # Use flow sensor (0-12 L/min) as intensity indicator
     # Map to realistic flood velocities:
-    # 0-4 L/min (normal) → 0.5 m/s
-    # 5-8 L/min (moderate) → 2.0 m/s  
-    # >8 L/min (high) → 5.0 m/s
+    # 0-4 L/min (normal) → 0.5 m/s - 0.38 m/s
+    # 5-8 L/min (moderate) → 2.0 m/s - 0.47, 0.66 m/s
+    # >8 L/min (high) → 5.0 m/s - 0.75 m/s
     if flow_val <= 4:
         base_velocity = 0.5
     elif flow_val <= 8:
@@ -254,6 +254,13 @@ def estimate_travel_time_km(distance_km: float, rain: float, ultrasonic: float, 
     distance_m = float(distance_km) * 1000.0
 
     time_s = distance_m / velocity
+
+    # If it is raining, accelerate arrival estimate by 5 minutes to reflect wetter, faster conditions
+    try:
+        if float(rain) == 1:
+            time_s = max(0.0, time_s - 5 * 60)
+    except Exception:
+        pass
 
     # If time is ridiculously large, mark as 'may not reach soon'
     hours = time_s / 3600.0
@@ -340,14 +347,22 @@ def predict_command(update: Update, context: CallbackContext):
     else:
         pred = int(proba >= 0.5)
 
-    # Soft-validate inputs and include warnings if any
-    warnings = validate_sensor_values(rain, ultrasonic, flow)
+    # Heuristic: ensure rain raises likelihood and no-rain slightly reduces it
+    try:
+        rain_flag = float(rain)
+        if rain_flag == 1:
+            proba = min(1.0, proba + 0.10)
+        elif rain_flag == 0:
+            proba = max(0.0, proba - 0.10)
+        pred = int(proba >= 0.5)
+    except Exception:
+        pass
 
-    # Estimate travel time to point B 1.5 km away and append to response
-    time_text = estimate_travel_time_km(1.5, rain, ultrasonic, flow)
-    reply_lines = [format_prediction(proba, pred), time_text]
-    if warnings:
-        reply_lines.append('Warnings: ' + '; '.join(warnings))
+    # Estimate travel time to point B 1.5 km away and append to response (only if flood detected)
+    reply_lines = [format_prediction(proba, pred)]
+    if pred == 1:  # Only show estimation time if flood is detected
+        time_text = estimate_travel_time_km(1.5, rain, ultrasonic, flow)
+        reply_lines.append(time_text)
     reply = '\n'.join(reply_lines)
     update.message.reply_text(reply)
 
@@ -371,11 +386,21 @@ def message_handler(update: Update, context: CallbackContext):
     else:
         pred = int(proba >= 0.5)
 
-    warnings = validate_sensor_values(rain, ultrasonic, flow)
-    time_text = estimate_travel_time_km(1.5, rain, ultrasonic, flow)
-    reply_lines = [format_prediction(proba, pred), time_text]
-    if warnings:
-        reply_lines.append('Warnings: ' + '; '.join(warnings))
+    # Heuristic: ensure rain raises likelihood and no-rain slightly reduces it
+    try:
+        rain_flag = float(rain)
+        if rain_flag == 1:
+            proba = min(1.0, proba + 0.10)
+        elif rain_flag == 0:
+            proba = max(0.0, proba - 0.10)
+        pred = int(proba >= 0.5)
+    except Exception:
+        pass
+
+    reply_lines = [format_prediction(proba, pred)]
+    if pred == 1:  # Only show estimation time if flood is detected
+        time_text = estimate_travel_time_km(1.5, rain, ultrasonic, flow)
+        reply_lines.append(time_text)
     reply = '\n'.join(reply_lines)
     update.message.reply_text(reply)
 

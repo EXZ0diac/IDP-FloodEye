@@ -1,0 +1,11 @@
+Model used in model_training.py:
+- Algorithm: RandomForestClassifier (sklearn)
+- Wrapped in a Pipeline with StandardScaler
+- Default training: 200 trees, random_state=42, n_jobs=-1
+- If accuracy < 0.90, it runs a RandomizedSearchCV over n_estimators/max_depth/min_samples_split/max_features/class_weight
+- If still low and data is small, it regenerates larger synthetic data (10k rows, lower noise) and retrains with 300 trees
+- Saved to models/flood_pipeline.joblib
+
+Why this model:
+- Handles mixed signal scales after scaling, robust to non-linear thresholds
+- Works well on small-to-medium tabular data without heavy feature engineering
